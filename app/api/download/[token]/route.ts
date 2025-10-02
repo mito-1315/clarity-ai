@@ -1,11 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { analysisResults } from "../../analyze/route"
+import { analysisResults } from "@/lib/analysis-storage"
 
-export async function GET(request: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(request: NextRequest, context: { params: { token: string } }) {
   try {
-    const { token } = params
+    const { token } = context.params
 
     console.log("[v0] Download request for token:", token)
+    console.log("[v0] Available tokens in storage:", Array.from(analysisResults.keys()))
 
     // Retrieve the analysis result
     const result = analysisResults.get(token)
