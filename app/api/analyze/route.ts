@@ -1,34 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { analyzeZipFile } from "@/lib/zip-analyzer"
 import { randomBytes } from "crypto"
+import { analysisResults } from "@/lib/analysis-storage"
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024 // 200MB
-
-// Store analysis results temporarily (in production, use Redis or similar)
-const analysisResults = new Map<
-  string,
-  {
-    report: any
-    cleanedZipBuffer: Buffer
-    timestamp: number
-  }
->()
-
-// Cleanup old results every 5 minutes
-setInterval(
-  () => {
-    const now = Date.now()
-    const EXPIRY_TIME = 10 * 60 * 1000 // 10 minutes
-
-    for (const [token, data] of analysisResults.entries()) {
-      if (now - data.timestamp > EXPIRY_TIME) {
-        analysisResults.delete(token)
-        console.log("[v0] Cleaned up expired analysis result:", token)
-      }
-    }
-  },
-  5 * 60 * 1000,
-)
 
 export async function POST(request: NextRequest) {
   try {
@@ -86,21 +61,21 @@ export async function POST(request: NextRequest) {
     })
 
     // Generate a secure download token
-    const downloadToken = randomBytes(32).toString('hex')
-
-    // Store the results temporarily
+    const downloadToken = randomBytes(32).toString('hex')    // Store the results temporarily
     analysisResults.set(downloadToken, {
       report,
       cleanedZipBuffer,
       timestamp: Date.now()
     })
 
+    console.log('[v0] Stored analysis result with token:', downloadToken)
+    console.log('[v0] Current storage size:', analysisResults.size)
+
     // Return the report with download token
     return NextResponse.json({
       ...report,
       downloadToken
     })
-
   } catch (error) {
     console.error('[v0] Analysis error:', error)
     return NextResponse.json(
@@ -109,6 +84,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
-// Export the results map for the download endpoint
-export { analysisResults }
