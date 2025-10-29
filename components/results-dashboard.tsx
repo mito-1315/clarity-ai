@@ -1,11 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import type { AnalysisReport } from "@/lib/types"
 import { Bar, BarChart, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { GeminiApiModal } from "./ai-api-modal"
 
 interface ResultsDashboardProps {
   report: AnalysisReport
@@ -14,6 +16,10 @@ interface ResultsDashboardProps {
 }
 
 export function ResultsDashboard({ report, downloadToken, onReset }: ResultsDashboardProps) {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+
   const handleDownload = async () => {
     try {
       const response = await fetch(`/api/download/${downloadToken}`)
@@ -30,10 +36,65 @@ export function ResultsDashboard({ report, downloadToken, onReset }: ResultsDash
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (error) {
+      document.body.removeChild(a)    } catch (error) {
       console.error("[v0] Download error:", error)
       alert("Failed to download cleaned ZIP file")
+    }
+  }
+  
+  const handleDownloadReport = () => {
+    setReportError(null)
+    setIsModalOpen(true)
+  }
+  
+  const handleGeminiSubmit = async (apiKey: string, provider: 'huggingface' | 'openai') => {
+    setIsGeneratingReport(true)
+    setReportError(null)
+    
+    try {
+      const response = await fetch("/api/generate-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          apiKey,
+          provider,
+          analysisReport: report,
+          downloadToken,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to generate report" }))
+        throw new Error(errorData.error || "Failed to generate report")
+      }      const htmlContent = await response.text()
+      
+      // Open HTML content in a new window for printing to PDF
+      const newWindow = window.open('', '_blank')
+      if (newWindow) {
+        newWindow.document.write(htmlContent)
+        newWindow.document.close()
+        // The print dialog will be triggered automatically by the HTML
+      } else {
+        // Fallback: create a blob and download as HTML file
+        const blob = new Blob([htmlContent], { type: 'text/html' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `clarity-ai-report-${new Date().toISOString().split('T')[0]}.html`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      }
+      
+      setIsModalOpen(false)
+    } catch (error) {
+      console.error("Report generation failed:", error)
+      setReportError(error instanceof Error ? error.message : "Failed to generate report")
+    } finally {
+      setIsGeneratingReport(false)
     }
   }
 
@@ -46,8 +107,7 @@ export function ResultsDashboard({ report, downloadToken, onReset }: ResultsDash
   ]
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      {/* Hero Section - Reduction Percentage */}
+    <div className="mx-auto max-w-6xl space-y-8">      {/* Hero Section - Reduction Percentage */}
       <Card className="border-2 border-primary/20 bg-gradient-to-br from-card to-card/50">
         <CardContent className="p-12 text-center">
           <div className="mb-4 inline-flex items-center justify-center rounded-full bg-primary/10 p-4">
@@ -60,16 +120,14 @@ export function ResultsDashboard({ report, downloadToken, onReset }: ResultsDash
               />
             </svg>
           </div>
-          <h2 className="mb-2 text-6xl font-bold text-primary">{report.reductionPercentage}%</h2>
-          <p className="mb-6 text-xl text-muted-foreground">Space Reduction Achieved</p>
-          <div className="mx-auto mb-6 max-w-md">
-            <div className="mb-2 flex justify-between text-sm text-muted-foreground">
-              <span>{report.originalSizeMB} MB</span>
-              <span>{report.cleanedSizeMB} MB</span>
-            </div>
-            <Progress value={100 - report.reductionPercentage} className="h-3" />
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <h2 className="mb-2 text-4xl font-bold text-foreground">
+            {Math.round(((report.originalSizeMB - report.cleanedSizeMB) / report.originalSizeMB) * 100)}% Reduction
+          </h2>
+          <p className="mb-6 text-lg text-muted-foreground">
+            Your archive was optimized from {report.originalSizeMB}MB to {report.cleanedSizeMB}MB
+          </p>
+          
+          <div className="flex justify-center gap-4">
             <Button
               onClick={handleDownload}
               size="lg"
@@ -83,12 +141,24 @@ export function ResultsDashboard({ report, downloadToken, onReset }: ResultsDash
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                 />
               </svg>
-              Download Cleaned ZIP
+              Download Cleaned Archive
             </Button>
-            <Button onClick={onReset} size="lg" variant="outline">
-              Analyze Another File
+            <Button 
+              size="lg" 
+              variant="outline" 
+              onClick={handleDownloadReport}
+              className="gap-2"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download Report
             </Button>
           </div>
+          
+          <Button variant="ghost" onClick={onReset} className="mt-4">
+            Analyze Another File
+          </Button>
         </CardContent>
       </Card>
 
@@ -215,10 +285,15 @@ export function ResultsDashboard({ report, downloadToken, onReset }: ResultsDash
                 {report.totalFilesAnalyzed - report.totalFilesRemoved}
               </div>
               <div className="text-sm text-muted-foreground">Files Kept</div>
-            </div>
-          </div>
+            </div>          </div>
         </CardContent>
-      </Card>
+      </Card>      <GeminiApiModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleGeminiSubmit}
+        isLoading={isGeneratingReport}
+        error={reportError}
+      />
     </div>
   )
 }
