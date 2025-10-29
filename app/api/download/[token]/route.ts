@@ -6,7 +6,7 @@ export async function GET(request: NextRequest, context: { params: { token: stri
     const { token } = context.params
 
     console.log("[v0] Download request for token:", token)
-    console.log("[v0] Available tokens in storage:", Array.from(analysisResults.keys()))
+    console.log("[v0] Available tokens in storage:", analysisResults.keys())
 
     // Retrieve the analysis result
     const result = analysisResults.get(token)
